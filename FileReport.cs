@@ -1,7 +1,7 @@
 ﻿// --------------------------------------------------------------------------------------------------------------------
-// <copyright file="FileReport.cs" company="FreeToDev"> (c) Mike Fourie. All other rights reserved.</copyright>
+// <copyright file="FileReport.cs" company="Mike Fourie"> (c) Mike Fourie. All other rights reserved.</copyright>
 // --------------------------------------------------------------------------------------------------------------------
-namespace LineCounter
+namespace LineCounterXP
 {
     public class FileReport
     {

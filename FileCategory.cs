@@ -1,7 +1,7 @@
 ﻿// --------------------------------------------------------------------------------------------------------------------
-// <copyright file="FileCategory.cs" company="FreeToDev"> (c) Mike Fourie. All other rights reserved.</copyright>
+// <copyright file="FileCategory.cs" company="Mike Fourie"> (c) Mike Fourie. All other rights reserved.</copyright>
 // --------------------------------------------------------------------------------------------------------------------
-namespace LineCounter
+namespace LineCounterXP
 {
     public class FileCategory
     {

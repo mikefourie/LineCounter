@@ -1,7 +1,7 @@
 ﻿// --------------------------------------------------------------------------------------------------------------------
-// <copyright file="CsvFile.cs" company="FreeToDev"> (c) Mike Fourie. All other rights reserved.</copyright>
+// <copyright file="CsvFile.cs" company="Mike Fourie"> (c) Mike Fourie. All other rights reserved.</copyright>
 // --------------------------------------------------------------------------------------------------------------------
-namespace LineCounter
+namespace LineCounterXP
 {
     using System;
 

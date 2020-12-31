@@ -1,4 +1,0 @@
-﻿[
-{"Include":true,"Category":"C#","FileTypes":".cs","NameExclusions":".designer", "SingleLineComment":"//", "MultilineCommentStart":"/*", "MultilineCommentEnd":"*/"},
-{"Include":true,"Category":"XML","FileTypes":".vsixmanifest,.testsettings,.resx,.kht,.xml,.xsd,.xsl,.xslt,.xht,.proj,.config,.testrunconfig,.wsdl,.xaml,.targets,.tasks,.properties","SingleLineComment":"", "MultilineCommentStart":"<!--", "MultilineCommentEnd":"-->"}
-]
