@@ -17,6 +17,15 @@
   },
   {
     "Include": true,
+    "Category": "BUILD-Extensionless",
+    "Extensionless": true,
+    "FileTypes": "BUILD",
+    "SingleLineComment": "REM",
+    "MultilineCommentStart": "",
+    "MultilineCommentEnd": ""
+  },
+  {
+    "Include": true,
     "Category": "Bazel",
     "FileTypes": ".bzl,.bazelignore,.bazelrc,.bazelversion",
     "SingleLineComment": "REM",
@@ -57,6 +66,15 @@
     "SingleLineComment": "//",
     "MultilineCommentStart": "/*",
     "MultilineCommentEnd": "*/"
+  },
+  {
+    "Include": true,
+    "Category": "Dockerfile-Extensionless",
+    "Extensionless": true,
+    "FileTypes": "Dockerfile",
+    "SingleLineComment": "REM",
+    "MultilineCommentStart": "",
+    "MultilineCommentEnd": ""
   },
   {
     "Include": true,

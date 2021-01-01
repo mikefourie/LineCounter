@@ -1,10 +1,8 @@
 ﻿// -----------------------------------------------------------------------------------------------------------------
 // <copyright file="Program.cs" company="Mike Fourie"> (c) Mike Fourie. All other rights reserved.</copyright>
 // --------------------------------------------------------------------------------------------------------------------
-namespace LineCounterXP
+namespace LineCounter
 {
-    using CommandLine;
-    using ConsoleTables;
     using System;
     using System.Collections;
     using System.Collections.Generic;
@@ -13,21 +11,24 @@ namespace LineCounterXP
     using System.Linq;
     using System.Text;
     using System.Text.Json;
+    using CommandLine;
+    using ConsoleTables;
 
-    class Program
+    public class Program
     {
+        private static readonly ArrayList ExtensionlessFiles = new ArrayList();
         private static List<CsvFile> csvFiles;
         private static List<FileCategory> cats;
         private static IEnumerable<FileInfo> foundFiles;
         private static Options programOptions = new Options();
 
-        static void Main(string[] args)
+        public static void Main(string[] args)
         {
             try
             {
                 WriteHeader();
                 Parser.Default.ParseArguments<Options>(args)
-                       .WithParsed<Options>(o =>
+                       .WithParsed(o =>
                        {
                            programOptions = o;
                        });
@@ -51,7 +52,7 @@ namespace LineCounterXP
                         ExportToCsv();
                     }
 
-                    var table = new ConsoleTable("Category", "Files", "Lines", "Code", "Comments", "Empty", "Files Inc.", "Files Excl.");
+                    ConsoleTable table = new ConsoleTable("Category", "Files", "Lines", "Code", "Comments", "Empty", "Files Inc.", "Files Excl.");
                     foreach (FileCategory fc in cats)
                     {
                         if (fc.TotalLines > 0)
@@ -84,65 +85,68 @@ namespace LineCounterXP
 
         private static void Scan(string path)
         {
+            Console.WriteLine($"Scanning: {path}");
+
             var recursiveSearch = programOptions.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
 
             string rootPath = path.Replace("*", string.Empty);
             DirectoryInfo dir = new DirectoryInfo(rootPath);
             foundFiles = dir.GetFiles("*", recursiveSearch).Where(x => (x.Attributes & FileAttributes.Hidden) == 0);
-            csvFiles = new List<CsvFile>(foundFiles.Count());           
+            csvFiles = new List<CsvFile>(foundFiles.Count());
             if (string.IsNullOrEmpty(programOptions.Categories))
             {
-                programOptions.Categories = Path.Combine($"{Directory.GetCurrentDirectory()}","categories.json");
+                programOptions.Categories = Path.Combine($"{Directory.GetCurrentDirectory()}", "categories.json");
             }
 
-            cats =  JsonSerializer.Deserialize<List<FileCategory>>(File.ReadAllText(programOptions.Categories));
-            System.Threading.Tasks.Task[] tasks = new System.Threading.Tasks.Task[cats.Count];
-            ObservableCollection<FileReport> xxx = new ObservableCollection<FileReport>();
-            string fileexclusions = programOptions.XFiles;
-            string folderexclusions;
-            folderexclusions = string.IsNullOrEmpty(programOptions.XFolders) ? ".git" : $".git,{programOptions.XFolders}";
-
-            for (int i = 0; i < cats.Count; i++)
+            cats = JsonSerializer.Deserialize<List<FileCategory>>(File.ReadAllText(programOptions.Categories));
+            if (cats != null)
             {
-                int i1 = i;
-                tasks[i] = System.Threading.Tasks.Task.Factory.StartNew(() => ProcessPath(cats[i1], foundFiles, xxx, fileexclusions, folderexclusions));
-            }
+                System.Threading.Tasks.Task[] tasks = new System.Threading.Tasks.Task[cats.Count];
+                ObservableCollection<FileReport> xxx = new ObservableCollection<FileReport>();
+                string fileExclusions = programOptions.XFiles;
+                string folderExclusions = string.IsNullOrEmpty(programOptions.XFolders) ? ".git" : $".git,{programOptions.XFolders}";
 
-            // Block until all tasks complete.
-            System.Threading.Tasks.Task.WaitAll(tasks);
-            ObservableCollection<FileReport> ReportedFiles = xxx;
+                for (int i = 0; i < cats.Count; i++)
+                {
+                    int i1 = i;
+                    tasks[i] = System.Threading.Tasks.Task.Factory.StartNew(() => ProcessPath(cats[i1], foundFiles, xxx, fileExclusions, folderExclusions));
+                }
 
-            int tfiles = 0;
-            int tlines = 0;
-            int tincluded = 0;
-            int texcluded = 0;
-            double tcomments = 0;
-            double tcode = 0;
-            double tempty = 0;
+                // Block until all tasks complete.
+                System.Threading.Tasks.Task.WaitAll(tasks);
 
-            foreach (FileCategory f in cats)
-            {
-                tfiles += f.TotalFiles;
-                tlines += f.TotalLines;
-                tcomments += f.Comments;
-                tempty += f.Empty;
-                tcode += f.Code;
-                tincluded += f.IncludedFiles;
-                texcluded += f.ExcludedFiles;
-            }
+                int totalFiles = 0;
+                int totalLines = 0;
+                int totalIncluded = 0;
+                int totalExcluded = 0;
+                double totalComments = 0;
+                double totalCode = 0;
+                double totalEmpty = 0;
 
-            cats.Add(new FileCategory { Include = false, Code = Convert.ToInt32(tcode), Comments = Convert.ToInt32(tcomments), ExcludedFiles = texcluded, Empty = Convert.ToInt32(tempty), FileTypes = "--------", IncludedFiles = tincluded, MultilineCommentEnd = "--------", MultilineCommentStart = "--------", Category = "TOTAL", TotalLines = tlines, TotalFiles = tfiles, SingleLineComment = "--------", NameExclusions = "--------" });
-            WhatDidWeSkip();
-            if (tlines == 0 && tfiles == 0)
-            {
-                Console.WriteLine("Nothing scanned...");
+                foreach (FileCategory f in cats)
+                {
+                    totalFiles += f.TotalFiles;
+                    totalLines += f.TotalLines;
+                    totalComments += f.Comments;
+                    totalEmpty += f.Empty;
+                    totalCode += f.Code;
+                    totalIncluded += f.IncludedFiles;
+                    totalExcluded += f.ExcludedFiles;
+                }
+
+                cats.Add(new FileCategory { Include = false, Code = Convert.ToInt32(totalCode), Comments = Convert.ToInt32(totalComments), ExcludedFiles = totalExcluded, Empty = Convert.ToInt32(totalEmpty), FileTypes = "--------", IncludedFiles = totalIncluded, MultilineCommentEnd = "--------", MultilineCommentStart = "--------", Category = "TOTAL", TotalLines = totalLines, TotalFiles = totalFiles, SingleLineComment = "--------", NameExclusions = "--------" });
+                WhatDidWeSkip();
+
+                if (totalLines == 0 && totalFiles == 0)
+                {
+                    Console.WriteLine("Nothing scanned...");
+                }
             }
         }
 
         private static void WhatDidWeSkip()
         {
             ArrayList usedExtensions = new ArrayList();
-            ObservableCollection<IgnoredFile> ignoredFiles = new ObservableCollection<IgnoredFile>();
             foreach (FileCategory cat in cats)
             {
                 foreach (string s in cat.FileTypes.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
@@ -156,29 +160,17 @@ namespace LineCounterXP
 
             foreach (FileInfo f in foundFiles)
             {
-                if (!usedExtensions.Contains(f.Extension.ToLower()))
+                if (!ExtensionlessFiles.Contains(f.FullName))
                 {
-                    ignoredFiles.Add(new IgnoredFile { File = f.FullName, Extension = f.Extension });
-                    csvFiles.Add(new CsvFile { File = f.FullName, Extension = f.Extension, Status = "Excluded", Reason = "Extension", Lines = 0, CreatedDateTime = f.CreationTime, LastWriteTime = f.LastWriteTime, Length = f.Length, Parent = f.Directory.Parent.Name, Directory = f.Directory.Name });
+                    if (!usedExtensions.Contains(f.Extension.ToLower()))
+                    {
+                        csvFiles.Add(new CsvFile { File = f.FullName, Extension = f.Extension, Status = "Excluded", Reason = "Extension", Lines = 0, CreatedDateTime = f.CreationTime, LastWriteTime = f.LastWriteTime, Length = f.Length, Parent = f.Directory.Parent.Name, Directory = f.Directory.Name });
+                    }
                 }
-            }
-
-            string[] extension = new string[ignoredFiles.Count];
-            int j = 0;
-            foreach (IgnoredFile ig in ignoredFiles)
-            {
-                extension[j++] = ig.Extension;
-            }
-
-            var groups = extension.GroupBy(v => v);
-            List<IgnoredExtension> ignoredExtensions = new List<IgnoredExtension>();
-            foreach (var group in groups)
-            {
-                ignoredExtensions.Add(new IgnoredExtension { Extension = group.Key, Count = group.Count() });
             }
         }
 
-        private static void ProcessPath(FileCategory cat, IEnumerable<FileInfo> fileInfo, ObservableCollection<FileReport> filereport, string fileExclusions, string folderExclusions)
+        private static void ProcessPath(FileCategory cat, IEnumerable<FileInfo> fileInfo, ObservableCollection<FileReport> fileReport, string fileExclusions, string folderExclusions)
         {
             cat.Code = 0;
             cat.Comments = 0;
@@ -193,23 +185,36 @@ namespace LineCounterXP
                 return;
             }
 
-            foreach (FileInfo f in cat.FileTypes.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).SelectMany(type => fileInfo.Where(f => f.Extension.ToLower() == type.TrimStart().ToLower())))
+            if (!cat.Extensionless)
             {
-                cat.TotalFiles++;
-                CountLines(f, cat, filereport, fileExclusions, folderExclusions);
+                foreach (FileInfo f in cat.FileTypes.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).SelectMany(type => fileInfo.Where(f => f.Extension.ToLower() == type.TrimStart().ToLower())))
+                {
+                    cat.TotalFiles++;
+                    CountLines(f, cat, fileReport, fileExclusions, folderExclusions);
+                }
+            }
+            else
+            {
+                foreach (FileInfo f in cat.FileTypes.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).SelectMany(type => fileInfo.Where(f => f.Name.ToLower() == type.TrimStart().ToLower())))
+                {
+                    cat.TotalFiles++;
+                    CountLines(f, cat, fileReport, fileExclusions, folderExclusions);
+                    ExtensionlessFiles.Add(f.FullName);
+                }
             }
 
             cat.Code = cat.TotalLines - cat.Empty - cat.Comments;
         }
 
-        private static void CountLines(FileSystemInfo i, FileCategory cat, ObservableCollection<FileReport> filereport, string fileExclusions, string folderExclusions)
+        private static void CountLines(FileSystemInfo i, FileCategory cat, ObservableCollection<FileReport> fileReport, string fileExclusions, string folderExclusions)
         {
             FileInfo thisFile = new FileInfo(i.FullName);
+
             if (!string.IsNullOrEmpty(fileExclusions))
             {
                 if (fileExclusions.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Any(s => thisFile.Name.ToLower().Contains(s.ToLower())))
                 {
-                    filereport.Add(new FileReport { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Global File Name", Status = "Excluded", Lines = 0, Category = cat.Category });
+                    fileReport.Add(new FileReport { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Global File Name", Status = "Excluded", Lines = 0, Category = cat.Category });
                     csvFiles.Add(new CsvFile { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Global File Name", Status = "Excluded", Lines = 0, Category = cat.Category, CreatedDateTime = thisFile.CreationTime, LastWriteTime = thisFile.LastWriteTime, Length = thisFile.Length, Parent = thisFile.Directory.Parent.Name, Directory = thisFile.Directory.Name });
                     cat.ExcludedFiles++;
                     return;
@@ -220,7 +225,7 @@ namespace LineCounterXP
             {
                 if (folderExclusions.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Any(s => thisFile.DirectoryName.ToLower().Contains(s.ToLower())))
                 {
-                    filereport.Add(new FileReport { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Global Folder Name", Status = "Excluded", Lines = 0, Category = cat.Category });
+                    fileReport.Add(new FileReport { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Global Folder Name", Status = "Excluded", Lines = 0, Category = cat.Category });
                     csvFiles.Add(new CsvFile { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Global Folder Name", Status = "Excluded", Lines = 0, Category = cat.Category, CreatedDateTime = thisFile.CreationTime, LastWriteTime = thisFile.LastWriteTime, Length = thisFile.Length, Parent = thisFile.Directory.Parent.Name, Directory = thisFile.Directory.Name });
                     cat.ExcludedFiles++;
                     return;
@@ -231,35 +236,35 @@ namespace LineCounterXP
             {
                 if (cat.NameExclusions.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Any(s => thisFile.Name.ToLower().Contains(s.ToLower())))
                 {
-                    filereport.Add(new FileReport { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Category File Name", Status = "Excluded", Lines = 0, Category = cat.Category });
+                    fileReport.Add(new FileReport { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Category File Name", Status = "Excluded", Lines = 0, Category = cat.Category });
                     csvFiles.Add(new CsvFile { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Category File Name", Status = "Excluded", Lines = 0, Category = cat.Category, CreatedDateTime = thisFile.CreationTime, LastWriteTime = thisFile.LastWriteTime, Length = thisFile.Length, Parent = thisFile.Directory.Parent.Name, Directory = thisFile.Directory.Name });
                     cat.ExcludedFiles++;
                     return;
                 }
             }
 
-            if (Math.Abs(programOptions.XLarger) > 0 && (thisFile.Length > programOptions.XLarger * 1024 * 1024))
+            if (Math.Abs(programOptions.XLarger) > 0 && thisFile.Length > programOptions.XLarger * 1024 * 1024)
             {
-                filereport.Add(new FileReport { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Large Size", Status = "Excluded", Lines = 0, Category = cat.Category });
+                fileReport.Add(new FileReport { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Large Size", Status = "Excluded", Lines = 0, Category = cat.Category });
                 csvFiles.Add(new CsvFile { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Large Size", Status = "Excluded", Lines = 0, Category = cat.Category, CreatedDateTime = thisFile.CreationTime, LastWriteTime = thisFile.LastWriteTime, Length = thisFile.Length, Parent = thisFile.Directory.Parent.Name, Directory = thisFile.Directory.Name });
                 cat.ExcludedFiles++;
                 return;
             }
 
-            if (Math.Abs(programOptions.XSmaller) > 0 && (thisFile.Length < programOptions.XSmaller * 1024))
+            if (Math.Abs(programOptions.XSmaller) > 0 && thisFile.Length < programOptions.XSmaller * 1024)
             {
-                filereport.Add(new FileReport { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Small Size", Status = "Excluded", Lines = 0, Category = cat.Category });
+                fileReport.Add(new FileReport { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Small Size", Status = "Excluded", Lines = 0, Category = cat.Category });
                 csvFiles.Add(new CsvFile { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Small Size", Status = "Excluded", Lines = 0, Category = cat.Category, CreatedDateTime = thisFile.CreationTime, LastWriteTime = thisFile.LastWriteTime, Length = thisFile.Length, Parent = thisFile.Directory.Parent.Name, Directory = thisFile.Directory.Name });
                 cat.ExcludedFiles++;
                 return;
             }
 
-            bool incomment = false;
-            bool handlemulti = !string.IsNullOrWhiteSpace(cat.MultilineCommentStart);
-            int filelinecount = 0;
+            bool inComment = false;
+            bool handleMulti = !string.IsNullOrWhiteSpace(cat.MultilineCommentStart);
+            int fileLineCount = 0;
             foreach (string line in File.ReadLines(i.FullName))
             {
-                filelinecount++;
+                fileLineCount++;
                 string line1 = line;
                 if (string.IsNullOrWhiteSpace(line))
                 {
@@ -267,30 +272,30 @@ namespace LineCounterXP
                 }
                 else
                 {
-                    if (handlemulti)
+                    if (handleMulti)
                     {
-                        if (incomment)
+                        if (inComment)
                         {
                             cat.Comments++;
                             if (line1.TrimEnd(' ').EndsWith(cat.MultilineCommentEnd, StringComparison.OrdinalIgnoreCase))
                             {
-                                incomment = false;
+                                inComment = false;
                             }
                         }
                         else
                         {
                             if (line1.TrimStart(' ').StartsWith(cat.MultilineCommentStart, StringComparison.OrdinalIgnoreCase))
                             {
-                                incomment = true;
+                                inComment = true;
                                 cat.Comments++;
                                 if (line1.TrimEnd(' ').EndsWith(cat.MultilineCommentEnd, StringComparison.OrdinalIgnoreCase))
                                 {
-                                    incomment = false;
+                                    inComment = false;
                                 }
                             }
                             else
                             {
-                                foreach (string s in cat.SingleLineComment.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Where(s => line1.TrimStart(' ').StartsWith(s, StringComparison.OrdinalIgnoreCase)))
+                                foreach (string unused in cat.SingleLineComment.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Where(s => line1.TrimStart(' ').StartsWith(s, StringComparison.OrdinalIgnoreCase)))
                                 {
                                     cat.Comments++;
                                 }
@@ -299,7 +304,7 @@ namespace LineCounterXP
                     }
                     else
                     {
-                        foreach (string s in cat.SingleLineComment.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Where(s => line1.TrimStart(' ').StartsWith(s, StringComparison.OrdinalIgnoreCase)))
+                        foreach (string unused in cat.SingleLineComment.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Where(s => line1.TrimStart(' ').StartsWith(s, StringComparison.OrdinalIgnoreCase)))
                         {
                             cat.Comments++;
                         }
@@ -309,8 +314,14 @@ namespace LineCounterXP
                 cat.TotalLines++;
             }
 
-            filereport.Add(new FileReport { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Match", Status = "Included", Lines = filelinecount, Category = cat.Category });
-            csvFiles.Add(new CsvFile { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Match", Status = "Included", Lines = filelinecount, Category = cat.Category, CreatedDateTime = thisFile.CreationTime, LastWriteTime = thisFile.LastWriteTime, Length = thisFile.Length, Parent = thisFile.Directory.Parent.Name, Directory = thisFile.Directory.Name });
+            string ext = thisFile.Extension;
+            if (string.IsNullOrEmpty(ext))
+            {
+                ext = ".noextension";
+            }
+
+            fileReport.Add(new FileReport { File = thisFile.FullName, Extension = ext, Reason = "Match", Status = "Included", Lines = fileLineCount, Category = cat.Category });
+            csvFiles.Add(new CsvFile { File = thisFile.FullName, Extension = ext, Reason = "Match", Status = "Included", Lines = fileLineCount, Category = cat.Category, CreatedDateTime = thisFile.CreationTime, LastWriteTime = thisFile.LastWriteTime, Length = thisFile.Length, Parent = thisFile.Directory.Parent.Name, Directory = thisFile.Directory.Name });
             cat.IncludedFiles++;
         }
 

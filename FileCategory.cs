@@ -1,7 +1,7 @@
 ﻿// --------------------------------------------------------------------------------------------------------------------
 // <copyright file="FileCategory.cs" company="Mike Fourie"> (c) Mike Fourie. All other rights reserved.</copyright>
 // --------------------------------------------------------------------------------------------------------------------
-namespace LineCounterXP
+namespace LineCounter
 {
     public class FileCategory
     {
@@ -10,6 +10,8 @@ namespace LineCounterXP
         public string Category { get; set; }
 
         public string FileTypes { get; set; }
+
+        public bool Extensionless { get; set; }
 
         public string SingleLineComment { get; set; }
 
@@ -28,7 +30,7 @@ namespace LineCounterXP
         public int Comments { get; set; }
 
         public int Empty { get; set; }
-        
+
         public int IncludedFiles { get; set; }
 
         public int ExcludedFiles { get; set; }

@@ -1,7 +1,7 @@
 ﻿// --------------------------------------------------------------------------------------------------------------------
 // <copyright file="CsvFile.cs" company="Mike Fourie"> (c) Mike Fourie. All other rights reserved.</copyright>
 // --------------------------------------------------------------------------------------------------------------------
-namespace LineCounterXP
+namespace LineCounter
 {
     using System;
 
@@ -14,11 +14,11 @@ namespace LineCounterXP
         public string Extension { get; set; }
 
         public string Directory { get; set; }
-        
+
         public string Parent { get; set; }
 
         public string Category { get; set; }
-        
+
         public string Status { get; set; }
 
         public string Reason { get; set; }
@@ -26,7 +26,7 @@ namespace LineCounterXP
         public DateTime CreatedDateTime { get; set; }
 
         public DateTime LastWriteTime { get; set; }
-        
+
         public long Length { get; set; }
     }
 }
