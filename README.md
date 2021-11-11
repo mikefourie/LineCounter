@@ -1,5 +1,8 @@
 # LineCounter
 
+[![Build Status](https://github.com/mikefourie/LineCounter/workflows/.NET/badge.svg)](https://github.com/mikefourie/LineCounter/actions)
+
+
 Count all lines under a given path. Categorization by file type. This is a useful tool for finding what languages are in a code base and how much code there is.
 
 Results can be exported to CSV.
