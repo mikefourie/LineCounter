@@ -26,6 +26,14 @@
   },
   {
     "Include": true,
+    "Category": "Bazel",
+    "FileTypes": ".bzl,.bazelignore,.bazelrc,.bazelversion",
+    "SingleLineComment": "REM",
+    "MultilineCommentStart": "",
+    "MultilineCommentEnd": ""
+  },
+  {
+    "Include": true,
     "Category": "CMake",
     "FileTypes": ".cmake",
     "NameExclusions": "",
@@ -127,11 +135,27 @@
   },
   {
     "Include": true,
+    "Category": "Jupyter",
+    "FileTypes": ".ipynb",
+    "SingleLineComment": "",
+    "MultilineCommentStart": "",
+    "MultilineCommentEnd": ""
+  },
+  {
+    "Include": true,
     "Category": "Kotlin",
     "FileTypes": ".kt,.ktm,.kts",
     "SingleLineComment": "//",
     "MultilineCommentStart": "/**",
     "MultilineCommentEnd": "*/"
+  },
+  {
+    "Include": true,
+    "Category": "Latex",
+    "FileTypes": ".tex",
+    "SingleLineComment": "%",
+    "MultilineCommentStart": "",
+    "MultilineCommentEnd": ""
   },
   {
     "Include": true,
@@ -169,6 +193,14 @@
     "Include": true,
     "Category": "Python",
     "FileTypes": ".py",
+    "SingleLineComment": "#",
+    "MultilineCommentStart": "",
+    "MultilineCommentEnd": ""
+  },
+  {
+    "Include": true,
+    "Category": "ROS",
+    "FileTypes": ".msg,.srv,.rviz,.action,.rosinstall",
     "SingleLineComment": "#",
     "MultilineCommentStart": "",
     "MultilineCommentEnd": ""
@@ -221,10 +253,18 @@
     "MultilineCommentStart": "<!--",
     "MultilineCommentEnd": "-->"
   },
+    {
+    "Include": true,
+    "Category": "World Magnetic Model",
+    "FileTypes": ".wmm",
+    "SingleLineComment": "#",
+    "MultilineCommentStart": "",
+    "MultilineCommentEnd": ""
+  },
   {
     "Include": true,
     "Category": "XML",
-    "FileTypes": ".vsixmanifest,.testsettings,.resx,.kht,.xml,.xsd,.xsl,.xslt,.xht,.proj,.config,.testrunconfig,.wsdl,.xaml,.targets,.tasks,.properties,.aml,.plist",
+    "FileTypes": ".world,.xacro,.launch,.vsixmanifest,.testsettings,.resx,.kht,.kml,.xml,.xsd,.xsl,.xslt,.xht,.proj,.config,.testrunconfig,.wsdl,.xaml,.targets,.tasks,.properties,.aml,.plist",
     "SingleLineComment": "",
     "MultilineCommentStart": "<!--",
     "MultilineCommentEnd": "-->"
