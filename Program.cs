@@ -78,7 +78,7 @@ public class Program
         }
     }
 
-    public static void WriteDataToCSV(ConsoleTable dataTable)
+    private static void WriteDataToCSV(ConsoleTable dataTable)
     {
         StringBuilder sb = new ();
         var columnLabels = dataTable.Columns;
@@ -99,7 +99,7 @@ public class Program
 
     private static void WriteHeader()
     {
-        Console.WriteLine("Line Counter --- run dotnet linecounter.dll --help for help");
+        Console.WriteLine("Line Counter. For help, run dotnet linecounter.dll --help");
         Console.WriteLine("----------------------------------------------------------------------\n");
     }
 
