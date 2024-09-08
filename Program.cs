@@ -4,6 +4,7 @@
 namespace LineCounter;
 
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Text;
@@ -14,13 +15,15 @@ using ConsoleTables;
 public class Program
 {
     private static readonly ArrayList ExtensionlessFiles = new ();
-    private static List<CsvFile> csvFiles;
+    private static ConcurrentBag<CsvFile> csvFiles;
     private static List<FileCategory> cats;
     private static IEnumerable<FileInfo> foundFiles;
     private static Options programOptions = new ();
 
     public static void Main(string[] args)
     {
+        const int largerMultiplier = 1024 * 1024;
+
         try
         {
             WriteHeader();
@@ -36,10 +39,10 @@ public class Program
                 path = programOptions.Path;
             }
 
-            DateTime start = DateTime.Now;
             if (Directory.Exists(path))
             {
-                Scan(path);
+                DateTime start = DateTime.Now;
+                Scan(path, largerMultiplier);
                 DateTime end = DateTime.Now;
                 TimeSpan t = end - start;
 
@@ -49,7 +52,7 @@ public class Program
                     ExportToCsv();
                 }
 
-                ConsoleTable table = new ("Category", "Files", "Lines", "Code", "Comments", "Empty", "Files Inc.", "Files Excl.");
+                ConsoleTable table = new ("Category", "Files", "Lines", "Code", "Comments", "Empty", "Files Incl.", "Files Excl.");
                 foreach (FileCategory fc in cats)
                 {
                     if (fc.TotalLines > 0)
@@ -65,7 +68,7 @@ public class Program
                     WriteDataToCSV(table);
                 }
 
-                Console.WriteLine($"Scan Time: {t.Seconds}s:{t.Milliseconds}ms");
+                Console.WriteLine($"Scan Time: {t.TotalSeconds}s");
             }
             else
             {
@@ -103,16 +106,19 @@ public class Program
         Console.WriteLine("----------------------------------------------------------------------\n");
     }
 
-    private static void Scan(string path)
+    private static void Scan(string path, int largerMultiplier)
     {
         Console.WriteLine($"Scanning: {path}");
-
         var recursiveSearch = programOptions.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+        DirectoryInfo dir = new (path.Replace("*", string.Empty));
 
-        string rootPath = path.Replace("*", string.Empty);
-        DirectoryInfo dir = new (rootPath);
-        foundFiles = dir.GetFiles("*", recursiveSearch).Where(x => (x.Attributes & FileAttributes.Hidden) == 0);
-        csvFiles = new List<CsvFile>(foundFiles.Count());
+        // Get all files
+        IEnumerable<FileInfo> allFiles = dir.GetFiles("*", recursiveSearch).Where(x => (x.Attributes & FileAttributes.Hidden) == 0);
+
+        // Filter out .git files
+        foundFiles = allFiles.Where(x => !x.FullName.Contains("\\.git\\"));
+
+        csvFiles = new ConcurrentBag<CsvFile>();
         if (string.IsNullOrEmpty(programOptions.Categories))
         {
             programOptions.Categories = Path.Combine($"{Directory.GetCurrentDirectory()}", "categories.json");
@@ -121,19 +127,14 @@ public class Program
         cats = JsonSerializer.Deserialize<List<FileCategory>>(File.ReadAllText(programOptions.Categories));
         if (cats != null)
         {
-            Task[] tasks = new Task[cats.Count];
             ObservableCollection<FileReport> xxx = new ();
             string fileExclusions = programOptions.XFiles;
-            string folderExclusions = string.IsNullOrEmpty(programOptions.XFolders) ? ".git" : $".git,{programOptions.XFolders}";
+            string folderExclusions = programOptions.XFolders;
 
-            for (int i = 0; i < cats.Count; i++)
+            Parallel.ForEach(cats, cat =>
             {
-                int i1 = i;
-                tasks[i] = System.Threading.Tasks.Task.Factory.StartNew(() => ProcessPath(cats[i1], foundFiles, xxx, fileExclusions, folderExclusions));
-            }
-
-            // Block until all tasks complete.
-            System.Threading.Tasks.Task.WaitAll(tasks);
+                ProcessPath(cat, foundFiles, xxx, fileExclusions, folderExclusions, largerMultiplier);
+            });
 
             int totalFiles = 0;
             int totalLines = 0;
@@ -190,7 +191,7 @@ public class Program
         }
     }
 
-    private static void ProcessPath(FileCategory cat, IEnumerable<FileInfo> fileInfo, ObservableCollection<FileReport> fileReport, string fileExclusions, string folderExclusions)
+    private static void ProcessPath(FileCategory cat, IEnumerable<FileInfo> fileInfo, ObservableCollection<FileReport> fileReport, string fileExclusions, string folderExclusions, int largerMultiplier)
     {
         cat.Code = 0;
         cat.Comments = 0;
@@ -210,7 +211,7 @@ public class Program
             foreach (FileInfo f in cat.FileTypes.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).SelectMany(type => fileInfo.Where(f => f.Extension.ToLower() == type.TrimStart().ToLower())))
             {
                 cat.TotalFiles++;
-                CountLines(f, cat, fileReport, fileExclusions, folderExclusions);
+                CountLines(f, cat, fileReport, fileExclusions, folderExclusions, largerMultiplier);
             }
         }
         else
@@ -218,7 +219,7 @@ public class Program
             foreach (FileInfo f in cat.FileTypes.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).SelectMany(type => fileInfo.Where(f => f.Name.ToLower() == type.TrimStart().ToLower())))
             {
                 cat.TotalFiles++;
-                CountLines(f, cat, fileReport, fileExclusions, folderExclusions);
+                CountLines(f, cat, fileReport, fileExclusions, folderExclusions, largerMultiplier);
                 ExtensionlessFiles.Add(f.FullName);
             }
         }
@@ -226,7 +227,7 @@ public class Program
         cat.Code = cat.TotalLines - cat.Empty - cat.Comments;
     }
 
-    private static void CountLines(FileSystemInfo i, FileCategory cat, ObservableCollection<FileReport> fileReport, string fileExclusions, string folderExclusions)
+    private static void CountLines(FileSystemInfo i, FileCategory cat, ObservableCollection<FileReport> fileReport, string fileExclusions, string folderExclusions, int largerMultiplier)
     {
         FileInfo thisFile = new (i.FullName);
 
@@ -263,7 +264,7 @@ public class Program
             }
         }
 
-        if (Math.Abs(programOptions.XLarger) > 0 && thisFile.Length > programOptions.XLarger * 1024 * 1024)
+        if (Math.Abs(programOptions.XLarger) > 0 && thisFile.Length > programOptions.XLarger * largerMultiplier)
         {
             fileReport.Add(new FileReport { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Large Size", Status = "Excluded", Lines = 0, Category = cat.Category });
             csvFiles.Add(new CsvFile { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Large Size", Status = "Excluded", Lines = 0, Category = cat.Category, CreatedDateTime = thisFile.CreationTime, LastWriteTime = thisFile.LastWriteTime, Length = thisFile.Length, Parent = thisFile.Directory.Parent.Name, Directory = thisFile.Directory.Name });
@@ -285,8 +286,9 @@ public class Program
         foreach (string line in File.ReadLines(i.FullName))
         {
             fileLineCount++;
-            string line1 = line;
-            if (string.IsNullOrWhiteSpace(line))
+            string trimmedLine = line.Trim();
+
+            if (string.IsNullOrWhiteSpace(trimmedLine))
             {
                 cat.Empty++;
             }
@@ -297,25 +299,25 @@ public class Program
                     if (inComment)
                     {
                         cat.Comments++;
-                        if (line1.TrimEnd(' ').EndsWith(cat.MultilineCommentEnd, StringComparison.OrdinalIgnoreCase))
+                        if (trimmedLine.EndsWith(cat.MultilineCommentEnd, StringComparison.OrdinalIgnoreCase))
                         {
                             inComment = false;
                         }
                     }
                     else
                     {
-                        if (line1.TrimStart(' ').StartsWith(cat.MultilineCommentStart, StringComparison.OrdinalIgnoreCase))
+                        if (trimmedLine.StartsWith(cat.MultilineCommentStart, StringComparison.OrdinalIgnoreCase))
                         {
                             inComment = true;
                             cat.Comments++;
-                            if (line1.TrimEnd(' ').EndsWith(cat.MultilineCommentEnd, StringComparison.OrdinalIgnoreCase))
+                            if (trimmedLine.EndsWith(cat.MultilineCommentEnd, StringComparison.OrdinalIgnoreCase))
                             {
                                 inComment = false;
                             }
                         }
                         else
                         {
-                            foreach (string unused in cat.SingleLineComment.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Where(s => line1.TrimStart(' ').StartsWith(s, StringComparison.OrdinalIgnoreCase)))
+                            foreach (string unused in cat.SingleLineComment.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Where(s => trimmedLine.StartsWith(s, StringComparison.OrdinalIgnoreCase)))
                             {
                                 cat.Comments++;
                             }
@@ -324,7 +326,7 @@ public class Program
                 }
                 else
                 {
-                    foreach (string unused in cat.SingleLineComment.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Where(s => line1.TrimStart(' ').StartsWith(s, StringComparison.OrdinalIgnoreCase)))
+                    foreach (string unused in cat.SingleLineComment.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Where(s => trimmedLine.StartsWith(s, StringComparison.OrdinalIgnoreCase)))
                     {
                         cat.Comments++;
                     }
@@ -350,9 +352,9 @@ public class Program
         StringBuilder sb = new ();
 
         sb.AppendLine("File,Lines,Extension,CreationDateTime,Category,Status,Reason,Length,Directory,Parent,CreatedDateTime,LastWriteTime");
-        foreach (CsvFile file in csvFiles)
+        foreach (CsvFile file in csvFiles.OrderBy(f => f.File))
         {
-            sb.Append(file.File + ",");
+            sb.Append(StringToCSVCell(file.File) + ",");
             sb.Append(file.Lines + ",");
             sb.Append(file.Extension + ",");
             sb.Append(file.CreatedDateTime + ",");
@@ -373,5 +375,33 @@ public class Program
         }
 
         File.WriteAllText(programOptions.OutputFile, sb.ToString());
+    }
+
+    /// <summary>
+    /// Converts a string into a CSV cell output.
+    /// </summary>
+    /// <param name="str">The string to convert.</param>
+    /// <returns>The converted string in CSV cell format.</returns>
+    private static string StringToCSVCell(string str)
+    {
+        bool mustQuote = str.Contains(',') || str.Contains('"') || str.Contains('\r') || str.Contains('\n');
+        if (mustQuote)
+        {
+            StringBuilder sb = new ();
+            sb.Append('"');
+            foreach (char nextChar in str)
+            {
+                sb.Append(nextChar);
+                if (nextChar == '"')
+                {
+                    sb.Append('"');
+                }
+            }
+
+            sb.Append('"');
+            return sb.ToString();
+        }
+
+        return str;
     }
 }
