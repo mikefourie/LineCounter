@@ -13,7 +13,7 @@ public class Options
     [Option('r', "recursive", Required = false, HelpText = "Set recursive folder search", Default = true)]
     public bool Recursive { get; set; }
 
-    [Option('p', "path", Required = false, HelpText = "Set the path to search")]
+    [Option('p', "path", Required = false, HelpText = "Set the path to search. Defaults to current directory.")]
     public string Path { get; set; }
 
     [Option('s', "xsmaller", Required = false, HelpText = "Set the smaller size to exclude")]
