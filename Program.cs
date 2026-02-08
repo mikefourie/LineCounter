@@ -3,18 +3,17 @@
 // --------------------------------------------------------------------------------------------------------------------
 namespace LineCounter;
 
-using System.Collections;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Text;
-using System.Text.Json;
 using CommandLine;
 using ConsoleTables;
+using System.Collections;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
 
 public class Program
 {
-    private static readonly ArrayList ExtensionlessFiles = new ();
+    private static readonly ArrayList ExtensionlessFiles = new();
     private static ConcurrentBag<CsvFile> csvFiles;
     private static List<FileCategory> cats;
     private static IEnumerable<FileInfo> foundFiles;
@@ -41,10 +40,9 @@ public class Program
 
             if (Directory.Exists(path))
             {
-                DateTime start = DateTime.Now;
+                Stopwatch sw = Stopwatch.StartNew();
                 Scan(path, largerMultiplier);
-                DateTime end = DateTime.Now;
-                TimeSpan t = end - start;
+                sw.Stop();
 
                 if (programOptions.ExportCsv)
                 {
@@ -68,7 +66,7 @@ public class Program
                     WriteDataToCSV(table);
                 }
 
-                Console.WriteLine($"Scan Time: {t.TotalSeconds}s");
+                Console.WriteLine($"Scan Time: {sw.Elapsed.TotalSeconds}s");
             }
             else
             {
@@ -91,13 +89,13 @@ public class Program
             for (int col = 0; col < columnLabels.Count; ++col)
             {
                 string value = fullRows[i][col].ToString();
-                sb.Append(value + ",");
+                sb.Append(value).Append(',');
             }
 
             sb.AppendLine();
         }
 
-        File.WriteAllText(Path.Combine($"{Directory.GetCurrentDirectory()}", "FileMetricsOutput.csv"), sb.ToString());
+        File.WriteAllText(Path.Combine(Directory.GetCurrentDirectory(), "FileMetricsOutput.csv"), sb.ToString());
     }
 
     private static void WriteHeader()
@@ -116,46 +114,39 @@ public class Program
         IEnumerable<FileInfo> allFiles = dir.GetFiles("*", recursiveSearch).Where(x => (x.Attributes & FileAttributes.Hidden) == 0);
 
         // Filter out .git files
-        foundFiles = allFiles.Where(x => !x.FullName.Contains("\\.git\\"));
+        string gitSegment = $"{Path.DirectorySeparatorChar}.git{Path.DirectorySeparatorChar}";
+        foundFiles = allFiles.Where(x => !x.FullName.Contains(gitSegment)).ToArray();
 
         csvFiles = new ConcurrentBag<CsvFile>();
         if (string.IsNullOrEmpty(programOptions.Categories))
         {
-            programOptions.Categories = Path.Combine($"{Directory.GetCurrentDirectory()}", "categories.json");
+            programOptions.Categories = Path.Combine(Directory.GetCurrentDirectory(), "categories.json");
         }
 
         cats = JsonSerializer.Deserialize<List<FileCategory>>(File.ReadAllText(programOptions.Categories));
         if (cats != null)
         {
-            ObservableCollection<FileReport> xxx = new ();
             string fileExclusions = programOptions.XFiles;
             string folderExclusions = programOptions.XFolders;
 
+            ILookup<string, FileInfo> filesByExtension = foundFiles.ToLookup(f => f.Extension, StringComparer.OrdinalIgnoreCase);
+
+            ILookup<string, FileInfo> filesByName = foundFiles.ToLookup(f => f.Name, StringComparer.OrdinalIgnoreCase);
+
             Parallel.ForEach(cats, cat =>
             {
-                ProcessPath(cat, foundFiles, xxx, fileExclusions, folderExclusions, largerMultiplier);
+                ProcessPath(cat, filesByExtension, filesByName, fileExclusions, folderExclusions, largerMultiplier);
             });
 
-            int totalFiles = 0;
-            int totalLines = 0;
-            int totalIncluded = 0;
-            int totalExcluded = 0;
-            double totalComments = 0;
-            double totalCode = 0;
-            double totalEmpty = 0;
+            int totalFiles = cats.Sum(f => f.TotalFiles);
+            int totalLines = cats.Sum(f => f.TotalLines);
+            int totalCode = cats.Sum(f => f.Code);
+            int totalComments = cats.Sum(f => f.Comments);
+            int totalEmpty = cats.Sum(f => f.Empty);
+            int totalIncluded = cats.Sum(f => f.IncludedFiles);
+            int totalExcluded = cats.Sum(f => f.ExcludedFiles);
 
-            foreach (FileCategory f in cats)
-            {
-                totalFiles += f.TotalFiles;
-                totalLines += f.TotalLines;
-                totalComments += f.Comments;
-                totalEmpty += f.Empty;
-                totalCode += f.Code;
-                totalIncluded += f.IncludedFiles;
-                totalExcluded += f.ExcludedFiles;
-            }
-
-            cats.Add(new FileCategory { Include = false, Code = Convert.ToInt32(totalCode), Comments = Convert.ToInt32(totalComments), ExcludedFiles = totalExcluded, Empty = Convert.ToInt32(totalEmpty), FileTypes = "--------", IncludedFiles = totalIncluded, MultilineCommentEnd = "--------", MultilineCommentStart = "--------", Category = "TOTAL", TotalLines = totalLines, TotalFiles = totalFiles, SingleLineComment = "--------", NameExclusions = "--------" });
+            cats.Add(new FileCategory { Include = false, Code = totalCode, Comments = totalComments, ExcludedFiles = totalExcluded, Empty = Convert.ToInt32(totalEmpty), FileTypes = "--------", IncludedFiles = totalIncluded, MultilineCommentEnd = "--------", MultilineCommentStart = "--------", Category = "TOTAL", TotalLines = totalLines, TotalFiles = totalFiles, SingleLineComment = "--------", NameExclusions = "--------" });
             WhatDidWeSkip();
 
             if (totalLines == 0 && totalFiles == 0)
@@ -167,7 +158,7 @@ public class Program
 
     private static void WhatDidWeSkip()
     {
-        ArrayList usedExtensions = new ();
+        ArrayList usedExtensions = new();
         foreach (FileCategory cat in cats)
         {
             foreach (string s in cat.FileTypes.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
@@ -191,7 +182,7 @@ public class Program
         }
     }
 
-    private static void ProcessPath(FileCategory cat, IEnumerable<FileInfo> fileInfo, ObservableCollection<FileReport> fileReport, string fileExclusions, string folderExclusions, int largerMultiplier)
+    private static void ProcessPath(FileCategory cat, ILookup<string, FileInfo> filesByExtension, ILookup<string, FileInfo> filesByName, string fileExclusions, string folderExclusions, int largerMultiplier)
     {
         cat.Code = 0;
         cat.Comments = 0;
@@ -206,48 +197,56 @@ public class Program
             return;
         }
 
+        string[] singleLineComments = cat.SingleLineComment.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        string[] fileExclusionParts = fileExclusions?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [];
+        string[] folderExclusionParts = folderExclusions?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [];
+        string[] nameExclusionParts = cat.NameExclusions?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [];
+
+        // Then pass these arrays to CountLines instead of raw strings
         if (!cat.Extensionless)
         {
-            foreach (FileInfo f in cat.FileTypes.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).SelectMany(type => fileInfo.Where(f => f.Extension.ToLower() == type.TrimStart().ToLower())))
+            foreach (string type in cat.FileTypes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
-                cat.TotalFiles++;
-                CountLines(f, cat, fileReport, fileExclusions, folderExclusions, largerMultiplier);
+                foreach (FileInfo f in filesByExtension[type])
+                {
+                    cat.TotalFiles++;
+                    CountLines(f, cat, fileExclusionParts, folderExclusionParts, nameExclusionParts, largerMultiplier, singleLineComments);
+                }
             }
         }
         else
         {
-            foreach (FileInfo f in cat.FileTypes.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).SelectMany(type => fileInfo.Where(f => f.Name.ToLower() == type.TrimStart().ToLower())))
+            foreach (string type in cat.FileTypes.Split(',', StringSplitOptions.RemoveEmptyEntries))
             {
-                cat.TotalFiles++;
-                CountLines(f, cat, fileReport, fileExclusions, folderExclusions, largerMultiplier);
-                ExtensionlessFiles.Add(f.FullName);
+                foreach (FileInfo f in filesByName[type])
+                {
+                    cat.TotalFiles++;
+                    CountLines(f, cat, fileExclusionParts, folderExclusionParts, nameExclusionParts, largerMultiplier, singleLineComments);
+                    ExtensionlessFiles.Add(f.FullName);
+                }
             }
         }
 
         cat.Code = cat.TotalLines - cat.Empty - cat.Comments;
     }
 
-    private static void CountLines(FileSystemInfo i, FileCategory cat, ObservableCollection<FileReport> fileReport, string fileExclusions, string folderExclusions, int largerMultiplier)
+    private static void CountLines(FileInfo thisFile, FileCategory cat, string[] fileExclusionParts, string[] folderExclusionParts, string[] nameExclusionParts, int largerMultiplier, string[] singleLineComments)
     {
-        FileInfo thisFile = new (i.FullName);
-
-        if (!string.IsNullOrEmpty(fileExclusions))
+        if (fileExclusionParts.Length != 0)
         {
-            if (fileExclusions.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Any(s => thisFile.Name.ToLower().Contains(s.ToLower())))
+            if (fileExclusionParts.Any(s => thisFile.Name.Contains(s, StringComparison.OrdinalIgnoreCase)))
             {
-                fileReport.Add(new FileReport { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Global File Name", Status = "Excluded", Lines = 0, Category = cat.Category });
-                csvFiles.Add(new CsvFile { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Global File Name", Status = "Excluded", Lines = 0, Category = cat.Category, CreatedDateTime = thisFile.CreationTime, LastWriteTime = thisFile.LastWriteTime, Length = thisFile.Length, Parent = thisFile.Directory.Parent.Name, Directory = thisFile.Directory.Name });
+                csvFiles.Add(CreateCsvFile(thisFile, cat.Category, "Excluded", "Global File Name", 0));
                 cat.ExcludedFiles++;
                 return;
             }
         }
 
-        if (!string.IsNullOrEmpty(folderExclusions))
+        if (folderExclusionParts.Length != 0)
         {
-            if (folderExclusions.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Any(s => thisFile.DirectoryName.ToLower().Contains(s.ToLower())))
+            if (folderExclusionParts.Any(s => thisFile.DirectoryName.Contains(s, StringComparison.OrdinalIgnoreCase)))
             {
-                fileReport.Add(new FileReport { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Global Folder Name", Status = "Excluded", Lines = 0, Category = cat.Category });
-                csvFiles.Add(new CsvFile { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Global Folder Name", Status = "Excluded", Lines = 0, Category = cat.Category, CreatedDateTime = thisFile.CreationTime, LastWriteTime = thisFile.LastWriteTime, Length = thisFile.Length, Parent = thisFile.Directory.Parent.Name, Directory = thisFile.Directory.Name });
+                csvFiles.Add(CreateCsvFile(thisFile, cat.Category, "Excluded", "Global Folder Name", 0));
                 cat.ExcludedFiles++;
                 return;
             }
@@ -255,10 +254,9 @@ public class Program
 
         if (!string.IsNullOrEmpty(cat.NameExclusions))
         {
-            if (cat.NameExclusions.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Any(s => thisFile.Name.ToLower().Contains(s.ToLower())))
+            if (nameExclusionParts.Any(s => thisFile.Name.Contains(s, StringComparison.OrdinalIgnoreCase)))
             {
-                fileReport.Add(new FileReport { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Category File Name", Status = "Excluded", Lines = 0, Category = cat.Category });
-                csvFiles.Add(new CsvFile { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Category File Name", Status = "Excluded", Lines = 0, Category = cat.Category, CreatedDateTime = thisFile.CreationTime, LastWriteTime = thisFile.LastWriteTime, Length = thisFile.Length, Parent = thisFile.Directory.Parent.Name, Directory = thisFile.Directory.Name });
+                csvFiles.Add(CreateCsvFile(thisFile, cat.Category, "Excluded", "Category File Name", 0));
                 cat.ExcludedFiles++;
                 return;
             }
@@ -266,16 +264,14 @@ public class Program
 
         if (Math.Abs(programOptions.XLarger) > 0 && thisFile.Length > programOptions.XLarger * largerMultiplier)
         {
-            fileReport.Add(new FileReport { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Large Size", Status = "Excluded", Lines = 0, Category = cat.Category });
-            csvFiles.Add(new CsvFile { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Large Size", Status = "Excluded", Lines = 0, Category = cat.Category, CreatedDateTime = thisFile.CreationTime, LastWriteTime = thisFile.LastWriteTime, Length = thisFile.Length, Parent = thisFile.Directory.Parent.Name, Directory = thisFile.Directory.Name });
+            csvFiles.Add(CreateCsvFile(thisFile, cat.Category, "Excluded", "Large Size", 0));
             cat.ExcludedFiles++;
             return;
         }
 
         if (Math.Abs(programOptions.XSmaller) > 0 && thisFile.Length < programOptions.XSmaller * 1024)
         {
-            fileReport.Add(new FileReport { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Small Size", Status = "Excluded", Lines = 0, Category = cat.Category });
-            csvFiles.Add(new CsvFile { File = thisFile.FullName, Extension = thisFile.Extension, Reason = "Small Size", Status = "Excluded", Lines = 0, Category = cat.Category, CreatedDateTime = thisFile.CreationTime, LastWriteTime = thisFile.LastWriteTime, Length = thisFile.Length, Parent = thisFile.Directory.Parent.Name, Directory = thisFile.Directory.Name });
+            csvFiles.Add(CreateCsvFile(thisFile, cat.Category, "Excluded", "Small Size", 0));
             cat.ExcludedFiles++;
             return;
         }
@@ -283,52 +279,43 @@ public class Program
         bool inComment = false;
         bool handleMulti = !string.IsNullOrWhiteSpace(cat.MultilineCommentStart);
         int fileLineCount = 0;
-        foreach (string line in File.ReadLines(i.FullName))
+        foreach (string line in File.ReadLines(thisFile.FullName))
         {
             fileLineCount++;
-            string trimmedLine = line.Trim();
+            ReadOnlySpan<char> trimmedLine = line.AsSpan().Trim();
 
-            if (string.IsNullOrWhiteSpace(trimmedLine))
+            if (trimmedLine.IsEmpty)
             {
                 cat.Empty++;
+                cat.TotalLines++;
+                continue;
+            }
+
+            if (handleMulti && inComment)
+            {
+                cat.Comments++;
+                if (trimmedLine.EndsWith(cat.MultilineCommentEnd, StringComparison.OrdinalIgnoreCase))
+                {
+                    inComment = false;
+                }
+            }
+            else if (handleMulti && trimmedLine.StartsWith(cat.MultilineCommentStart, StringComparison.OrdinalIgnoreCase))
+            {
+                inComment = true;
+                cat.Comments++;
+                if (trimmedLine.EndsWith(cat.MultilineCommentEnd, StringComparison.OrdinalIgnoreCase))
+                {
+                    inComment = false;
+                }
             }
             else
             {
-                if (handleMulti)
+                for (int i = 0; i < singleLineComments.Length; i++)
                 {
-                    if (inComment)
+                    if (trimmedLine.StartsWith(singleLineComments[i], StringComparison.OrdinalIgnoreCase))
                     {
                         cat.Comments++;
-                        if (trimmedLine.EndsWith(cat.MultilineCommentEnd, StringComparison.OrdinalIgnoreCase))
-                        {
-                            inComment = false;
-                        }
-                    }
-                    else
-                    {
-                        if (trimmedLine.StartsWith(cat.MultilineCommentStart, StringComparison.OrdinalIgnoreCase))
-                        {
-                            inComment = true;
-                            cat.Comments++;
-                            if (trimmedLine.EndsWith(cat.MultilineCommentEnd, StringComparison.OrdinalIgnoreCase))
-                            {
-                                inComment = false;
-                            }
-                        }
-                        else
-                        {
-                            foreach (string unused in cat.SingleLineComment.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Where(s => trimmedLine.StartsWith(s, StringComparison.OrdinalIgnoreCase)))
-                            {
-                                cat.Comments++;
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    foreach (string unused in cat.SingleLineComment.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Where(s => trimmedLine.StartsWith(s, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        cat.Comments++;
+                        break;
                     }
                 }
             }
@@ -342,7 +329,6 @@ public class Program
             ext = ".noextension";
         }
 
-        fileReport.Add(new FileReport { File = thisFile.FullName, Extension = ext, Reason = "Match", Status = "Included", Lines = fileLineCount, Category = cat.Category });
         csvFiles.Add(new CsvFile { File = thisFile.FullName, Extension = ext, Reason = "Match", Status = "Included", Lines = fileLineCount, Category = cat.Category, CreatedDateTime = thisFile.CreationTime, LastWriteTime = thisFile.LastWriteTime, Length = thisFile.Length, Parent = thisFile.Directory.Parent.Name, Directory = thisFile.Directory.Name });
         cat.IncludedFiles++;
     }
@@ -351,27 +337,26 @@ public class Program
     {
         StringBuilder sb = new ();
 
-        sb.AppendLine("File,Lines,Extension,CreationDateTime,Category,Status,Reason,Length,Directory,Parent,CreatedDateTime,LastWriteTime");
+        sb.AppendLine("File,Lines,Extension,CreatedDateTime,Category,Status,Reason,Length,Directory,Parent,LastWriteTime");
         foreach (CsvFile file in csvFiles.OrderBy(f => f.File))
         {
-            sb.Append(StringToCSVCell(file.File) + ",");
-            sb.Append(file.Lines + ",");
-            sb.Append(file.Extension + ",");
-            sb.Append(file.CreatedDateTime + ",");
-            sb.Append(file.Category + ",");
-            sb.Append(file.Status + ",");
-            sb.Append(file.Reason + ",");
-            sb.Append(file.Length + ",");
-            sb.Append(file.Directory + ",");
-            sb.Append(file.Parent + ",");
-            sb.Append(file.CreatedDateTime + ",");
-            sb.Append(file.LastWriteTime + ",");
+            sb.Append(StringToCSVCell(file.File)).Append(',');
+            sb.Append(file.Lines).Append(',');
+            sb.Append(file.Extension).Append(',');
+            sb.Append(file.CreatedDateTime).Append(',');
+            sb.Append(file.Category).Append(',');
+            sb.Append(file.Status).Append(',');
+            sb.Append(file.Reason).Append(',');
+            sb.Append(file.Length).Append(',');
+            sb.Append(file.Directory).Append(',');
+            sb.Append(file.Parent).Append(',');
+            sb.Append(file.LastWriteTime).Append(',');
             sb.AppendLine();
         }
 
         if (string.IsNullOrEmpty(programOptions.OutputFile))
         {
-            programOptions.OutputFile = Path.Combine($"{Directory.GetCurrentDirectory()}", "output.csv");
+            programOptions.OutputFile = Path.Combine(Directory.GetCurrentDirectory(), "output.csv");
         }
 
         File.WriteAllText(programOptions.OutputFile, sb.ToString());
@@ -384,24 +369,24 @@ public class Program
     /// <returns>The converted string in CSV cell format.</returns>
     private static string StringToCSVCell(string str)
     {
-        bool mustQuote = str.Contains(',') || str.Contains('"') || str.Contains('\r') || str.Contains('\n');
-        if (mustQuote)
+        return !str.AsSpan().ContainsAny([',', '"', '\r', '\n']) ? str : $"\"{str.Replace("\"", "\"\"")}\"";
+    }
+
+    private static CsvFile CreateCsvFile(FileInfo file, string category, string status, string reason, int lines)
+    {
+        return new CsvFile
         {
-            StringBuilder sb = new ();
-            sb.Append('"');
-            foreach (char nextChar in str)
-            {
-                sb.Append(nextChar);
-                if (nextChar == '"')
-                {
-                    sb.Append('"');
-                }
-            }
-
-            sb.Append('"');
-            return sb.ToString();
-        }
-
-        return str;
+            File = file.FullName,
+            Extension = string.IsNullOrEmpty(file.Extension) ? ".noextension" : file.Extension,
+            Category = category,
+            Status = status,
+            Reason = reason,
+            Lines = lines,
+            CreatedDateTime = file.CreationTime,
+            LastWriteTime = file.LastWriteTime,
+            Length = file.Length,
+            Parent = file.Directory.Parent.Name,
+            Directory = file.Directory.Name,
+        };
     }
 }
