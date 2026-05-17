@@ -17,7 +17,7 @@ public class Program
     private static ConcurrentBag<CsvFile> csvFiles;
     private static List<FileCategory> cats;
     private static IEnumerable<FileInfo> foundFiles;
-    private static Options programOptions = new ();
+    private static Options programOptions = new();
 
     public static void Main(string[] args)
     {
@@ -50,7 +50,7 @@ public class Program
                     ExportToCsv();
                 }
 
-                ConsoleTable table = new ("Category", "Files", "Lines", "Code", "Comments", "Empty", "Files Incl.", "Files Excl.");
+                ConsoleTable table = new("Category", "Files", "Lines", "Code", "Comments", "Empty", "Files Incl.", "Files Excl.");
                 foreach (FileCategory fc in cats)
                 {
                     if (fc.TotalLines > 0)
@@ -81,7 +81,7 @@ public class Program
 
     private static void WriteDataToCSV(ConsoleTable dataTable)
     {
-        StringBuilder sb = new ();
+        StringBuilder sb = new();
         var columnLabels = dataTable.Columns;
         var fullRows = dataTable.Rows;
         for (int i = 0; i < fullRows.Count; ++i)
@@ -108,14 +108,14 @@ public class Program
     {
         Console.WriteLine($"Scanning: {path}");
         var recursiveSearch = programOptions.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-        DirectoryInfo dir = new (path.Replace("*", string.Empty));
+        DirectoryInfo dir = new(path.Replace("*", string.Empty));
 
         // Get all files
         IEnumerable<FileInfo> allFiles = dir.GetFiles("*", recursiveSearch).Where(x => (x.Attributes & FileAttributes.Hidden) == 0);
 
         // Filter out .git files
         string gitSegment = $"{Path.DirectorySeparatorChar}.git{Path.DirectorySeparatorChar}";
-        foundFiles = allFiles.Where(x => !x.FullName.Contains(gitSegment)).ToArray();
+        foundFiles = [.. allFiles.Where(x => !x.FullName.Contains(gitSegment))];
 
         csvFiles = new ConcurrentBag<CsvFile>();
         if (string.IsNullOrEmpty(programOptions.Categories))
@@ -335,7 +335,7 @@ public class Program
 
     private static void ExportToCsv()
     {
-        StringBuilder sb = new ();
+        StringBuilder sb = new();
 
         sb.AppendLine("File,Lines,Extension,CreatedDateTime,Category,Status,Reason,Length,Directory,Parent,LastWriteTime");
         foreach (CsvFile file in csvFiles.OrderBy(f => f.File))
